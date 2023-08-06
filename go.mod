@@ -1,4 +1,4 @@
-module github.com/xtian/dnsttclient
+module github.com/xtianxian/dnsttclient
 
 go 1.19
 
