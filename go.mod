@@ -23,6 +23,10 @@ require (
 	github.com/templexxx/xorsimd v0.4.1 // indirect
 	github.com/tjfoc/gmsm v1.3.2 // indirect
 	golang.org/x/crypto v0.1.0 // indirect
+<<<<<<< HEAD
+=======
+	golang.org/x/mobile v0.0.0-20221110043201-43a038452099 // indirect
+>>>>>>> 3ec8d398ece859934a183efc4bbeacc5ebe8b158
 	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
 	golang.org/x/sys v0.2.0 // indirect
 	golang.org/x/text v0.4.0 // indirect
