@@ -252,7 +252,7 @@ func run(logger Logger, pubkey []byte, domain dns.Name, localAddr *net.TCPAddr, 
 	}
 }
 
-func start(logger Logger, args []string) error {
+func Start(logger Logger, args []string) error {
 	flag := flag.NewFlagSet("client", flag.ContinueOnError)
 	var dohURL string
 	var dotAddr string
@@ -469,7 +469,7 @@ func StartDnstt(logger Logger, str string) error {
 	if err != nil {
 		return err
 	}
-	err = start(logger, args)
+	err = Start(logger, args)
 
 	return err
 }
