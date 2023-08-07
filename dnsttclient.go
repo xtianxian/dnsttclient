@@ -119,18 +119,15 @@ func sampleUTLSDistribution(spec string) (*utls.ClientHelloID, error) {
 	return ids[sampleWeighted(weights)], nil
 }
 
-func handle(logger Logger, local *net.TCPConn, sess *smux.Session, conv uint32) error {
+func handle(local *net.TCPConn, sess *smux.Session, conv uint32) error {
 	stream, err := sess.OpenStream()
 	if err != nil {
-		logger.Log("session " + fmt.Sprint(conv) + " opening stream: " + err.Error())
 		return fmt.Errorf("session %08x opening stream: %v", conv, err)
 	}
 	defer func() {
-		logger.Log("end stream " + fmt.Sprint(conv) + ":" + fmt.Sprint(stream.ID()))
 		log.Printf("end stream %08x:%d", conv, stream.ID())
 		stream.Close()
 	}()
-	logger.Log("begin stream " + fmt.Sprint(conv) + ":" + fmt.Sprint(stream.ID()))
 	log.Printf("begin stream %08x:%d", conv, stream.ID())
 
 	var wg sync.WaitGroup
@@ -143,7 +140,6 @@ func handle(logger Logger, local *net.TCPConn, sess *smux.Session, conv uint32) 
 			err = nil
 		}
 		if err != nil && !errors.Is(err, io.ErrClosedPipe) {
-			logger.Log("stream " + fmt.Sprint(conv) + ":" + fmt.Sprint(stream.ID()) + " copy local←stream: " + err.Error())
 			log.Printf("stream %08x:%d copy stream←local: %v", conv, stream.ID(), err)
 		}
 		local.CloseRead()
@@ -157,7 +153,7 @@ func handle(logger Logger, local *net.TCPConn, sess *smux.Session, conv uint32) 
 			err = nil
 		}
 		if err != nil && !errors.Is(err, io.ErrClosedPipe) {
-			logger.Log("stream " + fmt.Sprint(conv) + ":" + fmt.Sprint(stream.ID()) + " copy local←stream: " + err.Error())
+
 			log.Printf("stream %08x:%d copy local←stream: %v", conv, stream.ID(), err)
 		}
 		local.CloseWrite()
@@ -167,37 +163,31 @@ func handle(logger Logger, local *net.TCPConn, sess *smux.Session, conv uint32) 
 	return err
 }
 
-func run(logger Logger, pubkey []byte, domain dns.Name, localAddr *net.TCPAddr, remoteAddr net.Addr, pconn net.PacketConn) error {
+func run(pubkey []byte, domain dns.Name, localAddr *net.TCPAddr, remoteAddr net.Addr, pconn net.PacketConn) error {
 	defer pconn.Close()
 	var err error
 
 	ln, err = net.ListenTCP("tcp", localAddr)
 	if err != nil {
-		logger.Log("opening local listener: " + err.Error())
 		return fmt.Errorf("opening local listener: %v", err)
 	}
 	defer ln.Close()
 
 	mtu := dnsNameCapacity(domain) - 8 - 1 - numPadding - 1 // clientid + padding length prefix + padding + data length prefix
 	if mtu < 80 {
-		logger.Log("domain " + fmt.Sprint(domain) + " leaves only " + fmt.Sprint(mtu) + " bytes for payload")
 		return fmt.Errorf("domain %s leaves only %d bytes for payload", domain, mtu)
 	}
-	logger.Log("effective MTU " + fmt.Sprint(mtu))
 	log.Printf("effective MTU %d", mtu)
 
 	// Open a KCP conn on the PacketConn.
 	conn, err = kcp.NewConn2(remoteAddr, nil, 0, 0, pconn)
 	if err != nil {
-		logger.Log("opening KCP conn: " + err.Error())
 		return fmt.Errorf("opening KCP conn: %v", err)
 	}
 	defer func() {
-		logger.Log("end session " + fmt.Sprint(conn.GetConv()))
 		log.Printf("end session %08x", conn.GetConv())
 		conn.Close()
 	}()
-	logger.Log("begin session " + fmt.Sprint(conn.GetConv()))
 	log.Printf("begin session %08x", conn.GetConv())
 	// Permit coalescing the payloads of consecutive sends.
 	conn.SetStreamMode(true)
@@ -217,7 +207,6 @@ func run(logger Logger, pubkey []byte, domain dns.Name, localAddr *net.TCPAddr, 
 	// Put a Noise channel on top of the KCP conn.
 	rw, err = noise.NewClient(conn, pubkey)
 	if err != nil {
-		logger.Log(err.Error())
 		return err
 	}
 
@@ -228,7 +217,6 @@ func run(logger Logger, pubkey []byte, domain dns.Name, localAddr *net.TCPAddr, 
 	smuxConfig.MaxStreamBuffer = 1 * 1024 * 1024 // default is 65536
 	sess, err = smux.Client(rw, smuxConfig)
 	if err != nil {
-		logger.Log("opening smux session: " + err.Error())
 		return fmt.Errorf("opening smux session: %v", err)
 	}
 	defer sess.Close()
@@ -243,16 +231,15 @@ func run(logger Logger, pubkey []byte, domain dns.Name, localAddr *net.TCPAddr, 
 		}
 		go func() {
 			defer local.Close()
-			err := handle(logger, local.(*net.TCPConn), sess, conn.GetConv())
+			err := handle(local.(*net.TCPConn), sess, conn.GetConv())
 			if err != nil {
-				logger.Log("handle: " + err.Error())
 				log.Printf("handle: %v", err)
 			}
 		}()
 	}
 }
 
-func Start(logger Logger, args []string) error {
+func Start(args []string) error {
 	flag := flag.NewFlagSet("client", flag.ContinueOnError)
 	var dohURL string
 	var dotAddr string
@@ -276,7 +263,6 @@ func Start(logger Logger, args []string) error {
 	domain, err := dns.ParseName(flag.Arg(0))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "invalid domain %+q: %v\n", flag.Arg(0), err)
-		logger.Log("invalid domain " + flag.Arg(0) + ":" + err.Error())
 		return errors.New("invalid domain " + flag.Arg(0) + ":" + err.Error())
 	}
 	localAddr, err := net.ResolveTCPAddr("tcp", flag.Arg(1))
@@ -286,38 +272,32 @@ func Start(logger Logger, args []string) error {
 
 	var pubkey []byte
 	if pubkeyFilename != "" && pubkeyString != "" {
-		logger.Log("only one of -pubkey and -pubkey-file may be used")
 		return errors.New("only one of -pubkey and -pubkey-file may be used")
 	} else if pubkeyFilename != "" {
 		var err error
 		pubkey, err = readKeyFromFile(pubkeyFilename)
 		if err != nil {
-			logger.Log("cannot read pubkey from file: " + err.Error())
 			return errors.New("cannot read pubkey from file: " + err.Error())
 		}
 	} else if pubkeyString != "" {
 		var err error
 		pubkey, err = noise.DecodeKey(pubkeyString)
 		if err != nil {
-			logger.Log("pubkey format error: " + err.Error())
 			return errors.New("pubkey format error: " + err.Error())
 		}
 	}
 	if len(pubkey) == 0 {
 		fmt.Fprintf(os.Stderr, "the -pubkey or -pubkey-file option is required\n")
-		logger.Log("the -pubkey or -pubkey-file option is required")
 		return errors.New("the -pubkey or -pubkey-file option is required")
 	}
 
 	utlsClientHelloID, err := sampleUTLSDistribution(utlsDistribution)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "parsing -utls: %v\n", err)
-		logger.Log("parsing -utls: " + err.Error())
 		return errors.New("parsing -utls: " + err.Error())
 	}
 
 	if utlsClientHelloID != nil {
-		logger.Log("uTLS fingerprint " + utlsClientHelloID.Client + " " + utlsClientHelloID.Version)
 		log.Printf("uTLS fingerprint %s %s", utlsClientHelloID.Client, utlsClientHelloID.Version)
 	}
 
@@ -366,7 +346,7 @@ func Start(logger Logger, args []string) error {
 		{udpAddr, func(s string) (net.Addr, net.PacketConn, error) {
 			addr, err := net.ResolveUDPAddr("udp", s)
 			if err != nil {
-				logger.Log(err.Error())
+				log.Printf(err.Error())
 				return nil, nil, err
 			}
 			pconn, err := net.ListenUDP("udp", nil)
@@ -377,7 +357,6 @@ func Start(logger Logger, args []string) error {
 			continue
 		}
 		if pconn != nil {
-			logger.Log("only one of -doh, -dot, and -udp may be given")
 			return errors.New("only one of -doh, -dot, and -udp may be given\n")
 		}
 		var err error
@@ -387,12 +366,11 @@ func Start(logger Logger, args []string) error {
 		}
 	}
 	if pconn == nil {
-		logger.Log("one of -doh, -dot, or -udp is required")
 		return errors.New("one of -doh, -dot, or -udp is required")
 	}
 
 	pconn = NewDNSPacketConn(pconn, remoteAddr, domain)
-	err = run(logger, pubkey, domain, localAddr, remoteAddr, pconn)
+	err = run(pubkey, domain, localAddr, remoteAddr, pconn)
 	if err != nil {
 		return err
 	}
@@ -416,36 +394,36 @@ var rw io.ReadWriteCloser
 var sess *smux.Session
 var isRunning = false
 
-func StopDnstt(logger Logger) error {
-	logger.Log("Stopping Dnstt")
+func StopDnstt() error {
+	log.Printf("Stopping Dnstt")
 	var err error
 	isRunning = false
 
 	if sess != nil {
 		err = sess.Close()
 		if err != nil {
-			logger.Log(err.Error())
+			log.Printf(err.Error())
 			return err
 		}
 	}
 	if rw != nil {
 		err = rw.Close()
 		if err != nil {
-			logger.Log(err.Error())
+			log.Printf(err.Error())
 			return err
 		}
 	}
 	if conn != nil {
 		err = conn.Close()
 		if err != nil {
-			logger.Log(err.Error())
+			log.Printf(err.Error())
 			return err
 		}
 	}
 	if ln != nil {
 		err = ln.Close()
 		if err != nil {
-			logger.Log(err.Error())
+			log.Printf(err.Error())
 			return err
 		}
 	}
@@ -453,12 +431,12 @@ func StopDnstt(logger Logger) error {
 	return err
 }
 
-func StartDnstt(logger Logger, str string) error {
-	logger.Log("Starting Dnstt")
+func StartDnstt(str string) error {
+	log.Printf("Starting Dnstt")
 
 	if isRunning {
-		logger.Log("Dnstt is still running")
-		StopDnstt(logger)
+		log.Printf("Dnstt is still running")
+		StopDnstt()
 	}
 
 	var args []string
@@ -469,11 +447,7 @@ func StartDnstt(logger Logger, str string) error {
 	if err != nil {
 		return err
 	}
-	err = Start(logger, args)
+	err = Start(args)
 
 	return err
-}
-
-type Logger interface {
-	Log(str string)
 }
